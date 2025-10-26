@@ -7,7 +7,6 @@ A beautiful CLI tool for safely deleting Cloudflare Workers and their associated
 - 🎨 **Beautiful TUI** - Powered by Bubble Tea and Lipgloss with Cloudflare's brand colors
 - 🔒 **Safe Deletion** - Prevents accidental deletion of shared resources
 - 🔍 **Dependency Analysis** - Scans all workers to find shared resources
-- 📊 **Risk Indicators** - Color-coded warnings for shared resources
 - 🌈 **Interactive Mode** - Step-by-step confirmations with clear explanations
 - 🏃 **Dry Run Mode** - Preview what will be deleted without making changes
 - 🔑 **Secure Credentials** - API keys stored securely in your config directory
@@ -120,14 +119,9 @@ cf-delete-worker --update-key
 
 3. **Dependency Analysis**: All workers in your account are scanned to identify which resources are shared vs. exclusive to the target worker.
 
-4. **Risk Assessment**: Resources are color-coded based on usage:
-   - 🟢 **Green (Safe)**: Exclusive to this worker
-   - 🟡 **Yellow (Caution)**: Used by 1-2 other workers
-   - 🔴 **Red (Danger)**: Used by 3+ workers
+4. **Interactive Confirmation**: You're shown a detailed deletion plan and asked to confirm before any changes are made.
 
-5. **Interactive Confirmation**: You're shown a detailed deletion plan and asked to confirm before any changes are made.
-
-6. **Safe Deletion**: Resources are deleted in the correct order, with clear progress indication and error handling.
+5. **Safe Deletion**: Resources are deleted in the correct order, with clear progress indication and error handling.
 
 ## Supported Resource Types
 
@@ -223,7 +217,6 @@ MIT License - see LICENSE file for details
 
 - Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lipgloss](https://github.com/charmbracelet/lipgloss)
 - Uses the official [Cloudflare Go SDK](https://github.com/cloudflare/cloudflare-go)
-- Inspired by Cloudflare's commitment to developer experience
 
 ## Support
 
