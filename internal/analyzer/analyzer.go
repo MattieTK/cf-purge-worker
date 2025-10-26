@@ -7,6 +7,9 @@ import (
 	"github.com/cloudflare/cf-delete-worker/pkg/types"
 )
 
+// ProgressCallback is called during analysis to report progress
+type ProgressCallback func(current, total int, workerName string)
+
 // Analyzer analyzes worker dependencies
 type Analyzer struct {
 	client *api.Client
@@ -20,18 +23,31 @@ func NewAnalyzer(client *api.Client) *Analyzer {
 }
 
 // AnalyzeDependencies analyzes which workers depend on which resources
-func (a *Analyzer) AnalyzeDependencies(targetWorker *types.WorkerInfo) ([]types.ResourceUsage, error) {
+func (a *Analyzer) AnalyzeDependencies(targetWorker *types.WorkerInfo, progressCallback ...ProgressCallback) ([]types.ResourceUsage, error) {
+	// Get callback if provided
+	var callback ProgressCallback
+	if len(progressCallback) > 0 {
+		callback = progressCallback[0]
+	}
+
 	// Get all workers in the account
 	allWorkers, err := a.client.ListWorkers()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list workers: %w", err)
 	}
 
+	totalWorkers := len(allWorkers)
+
 	// Build a map of resources to workers that use them
 	resourceMap := make(map[string]*types.ResourceUsage)
 
 	// Process all workers to find resource usage
-	for _, worker := range allWorkers {
+	for i, worker := range allWorkers {
+		// Report progress if callback is provided
+		if callback != nil {
+			callback(i+1, totalWorkers, worker.Name)
+		}
+
 		// Get full worker details with bindings
 		fullWorker, err := a.client.GetWorker(worker.Name)
 		if err != nil {

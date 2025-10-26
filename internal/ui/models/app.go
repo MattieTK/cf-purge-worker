@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/cloudflare/cf-delete-worker/internal/analyzer"
 	"github.com/cloudflare/cf-delete-worker/internal/deleter"
 	"github.com/cloudflare/cf-delete-worker/internal/ui/views"
 	"github.com/cloudflare/cf-delete-worker/pkg/types"
@@ -15,6 +16,7 @@ type sessionState int
 
 const (
 	stateLoading sessionState = iota
+	stateAnalyzing
 	stateShowPlan
 	stateConfirmDeletion
 	stateConfirmShared
@@ -34,12 +36,17 @@ type Model struct {
 	message          string
 	config           *types.Config
 	deleter          *deleter.Deleter
+	analyzer         *analyzer.Analyzer
 	confirmDeletion  bool
 	confirmShared    bool
 	skipShared       bool
+	// Analysis progress tracking
+	analysisProgress int
+	analysisTotal    int
+	analysisWorker   string
 }
 
-// NewModel creates a new application model
+// NewModel creates a new application model with a pre-computed plan
 func NewModel(worker *types.WorkerInfo, plan *types.DeletionPlan, config *types.Config, d *deleter.Deleter) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -54,9 +61,48 @@ func NewModel(worker *types.WorkerInfo, plan *types.DeletionPlan, config *types.
 	}
 }
 
+// NewModelWithAnalysis creates a new model that will run analysis interactively
+func NewModelWithAnalysis(worker *types.WorkerInfo, a *analyzer.Analyzer, config *types.Config, d *deleter.Deleter) Model {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+
+	return Model{
+		state:    stateAnalyzing,
+		worker:   worker,
+		config:   config,
+		deleter:  d,
+		analyzer: a,
+		spinner:  s,
+	}
+}
+
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
+	if m.state == stateAnalyzing {
+		return tea.Batch(
+			m.spinner.Tick,
+			m.runAnalysis(),
+		)
+	}
 	return m.spinner.Tick
+}
+
+// runAnalysis runs the dependency analysis in the background
+func (m Model) runAnalysis() tea.Cmd {
+	return func() tea.Msg {
+		// Run analysis with progress callback
+		resources, err := m.analyzer.AnalyzeDependencies(m.worker, func(current, total int, workerName string) {
+			// This is called synchronously during analysis, but we can't send messages here
+			// So we'll just ignore it for now - the spinner will show activity
+		})
+		if err != nil {
+			return analysisErrorMsg{err: err}
+		}
+
+		// Create deletion plan
+		plan := m.analyzer.CreateDeletionPlan(m.worker, resources, m.config.ExclusiveOnly)
+		return analysisCompleteMsg{plan: plan}
+	}
 }
 
 // Update handles messages
@@ -66,12 +112,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKeyPress(msg)
 
 	case spinner.TickMsg:
-		// Keep spinner running while in deleting state
-		if m.state == stateDeleting {
+		// Keep spinner running while in analyzing or deleting state
+		if m.state == stateAnalyzing || m.state == stateDeleting {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
 		}
+
+	case analysisProgressMsg:
+		m.analysisProgress = msg.current
+		m.analysisTotal = msg.total
+		m.analysisWorker = msg.workerName
+		return m, nil
+
+	case analysisCompleteMsg:
+		m.plan = msg.plan
+		m.state = stateShowPlan
+		return m, nil
+
+	case analysisErrorMsg:
+		m.state = stateError
+		m.Err = msg.err
+		return m, tea.Quit
 
 	case deletionCompleteMsg:
 		m.state = stateComplete
@@ -189,6 +251,14 @@ func (m Model) View() string {
 	case stateLoading:
 		b.WriteString(fmt.Sprintf("%s %s\n", m.spinner.View(), m.message))
 
+	case stateAnalyzing:
+		b.WriteString(fmt.Sprintf("%s Analyzing dependencies...\n", m.spinner.View()))
+		if m.analysisTotal > 0 {
+			percentage := float64(m.analysisProgress) / float64(m.analysisTotal) * 100
+			b.WriteString(fmt.Sprintf("   Progress: %d/%d workers (%.0f%%) - Current: %s\n",
+				m.analysisProgress, m.analysisTotal, percentage, m.analysisWorker))
+		}
+
 	case stateShowPlan:
 		b.WriteString(views.RenderDeletionPlan(m.plan))
 		b.WriteString("\n")
@@ -227,5 +297,19 @@ type deletionCompleteMsg struct {
 }
 
 type deletionErrorMsg struct {
+	err error
+}
+
+type analysisProgressMsg struct {
+	current    int
+	total      int
+	workerName string
+}
+
+type analysisCompleteMsg struct {
+	plan *types.DeletionPlan
+}
+
+type analysisErrorMsg struct {
 	err error
 }
