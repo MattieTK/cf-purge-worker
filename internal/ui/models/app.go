@@ -3,6 +3,8 @@ package models
 import (
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -25,6 +27,28 @@ const (
 	stateError
 )
 
+// progressTracker safely tracks analysis progress across goroutines
+type progressTracker struct {
+	mu         sync.RWMutex
+	current    int
+	total      int
+	workerName string
+}
+
+func (p *progressTracker) update(current, total int, workerName string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.current = current
+	p.total = total
+	p.workerName = workerName
+}
+
+func (p *progressTracker) get() (int, int, string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.current, p.total, p.workerName
+}
+
 // Model represents the application state
 type Model struct {
 	state            sessionState
@@ -44,6 +68,7 @@ type Model struct {
 	analysisProgress int
 	analysisTotal    int
 	analysisWorker   string
+	progressTracker  *progressTracker
 }
 
 // NewModel creates a new application model with a pre-computed plan
@@ -67,12 +92,13 @@ func NewModelWithAnalysis(worker *types.WorkerInfo, a *analyzer.Analyzer, config
 	s.Spinner = spinner.Dot
 
 	return Model{
-		state:    stateAnalyzing,
-		worker:   worker,
-		config:   config,
-		deleter:  d,
-		analyzer: a,
-		spinner:  s,
+		state:           stateAnalyzing,
+		worker:          worker,
+		config:          config,
+		deleter:         d,
+		analyzer:        a,
+		spinner:         s,
+		progressTracker: &progressTracker{},
 	}
 }
 
@@ -82,19 +108,28 @@ func (m Model) Init() tea.Cmd {
 		return tea.Batch(
 			m.spinner.Tick,
 			m.runAnalysis(),
+			m.pollProgress(),
 		)
 	}
 	return m.spinner.Tick
 }
 
+// pollProgress creates a command that polls for progress updates
+func (m Model) pollProgress() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return progressPollMsg{}
+	})
+}
+
 // runAnalysis runs the dependency analysis in the background
 func (m Model) runAnalysis() tea.Cmd {
 	return func() tea.Msg {
-		// Run analysis with progress callback
+		// Run analysis with progress callback that updates the tracker
 		resources, err := m.analyzer.AnalyzeDependencies(m.worker, func(current, total int, workerName string) {
-			// This is called synchronously during analysis, but we can't send messages here
-			// So we'll just ignore it for now - the spinner will show activity
+			// Update the progress tracker which will be polled by the UI
+			m.progressTracker.update(current, total, workerName)
 		})
+
 		if err != nil {
 			return analysisErrorMsg{err: err}
 		}
@@ -119,11 +154,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
-	case analysisProgressMsg:
-		m.analysisProgress = msg.current
-		m.analysisTotal = msg.total
-		m.analysisWorker = msg.workerName
-		return m, nil
+	case progressPollMsg:
+		// Poll the progress tracker and update our fields
+		if m.state == stateAnalyzing && m.progressTracker != nil {
+			current, total, workerName := m.progressTracker.get()
+			m.analysisProgress = current
+			m.analysisTotal = total
+			m.analysisWorker = workerName
+			// Schedule next poll
+			return m, m.pollProgress()
+		}
 
 	case analysisCompleteMsg:
 		m.plan = msg.plan
@@ -313,3 +353,5 @@ type analysisCompleteMsg struct {
 type analysisErrorMsg struct {
 	err error
 }
+
+type progressPollMsg struct{}

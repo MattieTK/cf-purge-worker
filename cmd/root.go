@@ -132,10 +132,10 @@ func run(cmd *cobra.Command, args []string) error {
 	if !config.Quiet && !config.JSONOutput {
 		// Show progress during analysis
 		resources, err = a.AnalyzeDependencies(worker, func(current, total int, workerName string) {
-			fmt.Printf("\r%s Analyzing workers: %d/%d (%s)%s",
+			// Use ANSI escape code to clear the line instead of hardcoded padding
+			fmt.Printf("\r\033[K%s Analyzing workers: %d/%d (%s)",
 				views.RenderProgress(""),
-				current, total, workerName,
-				"                    ") // Padding to clear previous text
+				current, total, workerName)
 			if current == total {
 				fmt.Println() // New line when done
 			}
