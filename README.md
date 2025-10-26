@@ -16,7 +16,7 @@ A beautiful CLI tool for safely deleting Cloudflare Workers and their associated
 ### From Source
 
 ```bash
-git clone https://github.com/cloudflare/cf-delete-worker.git
+git clone https://github.com/mattietk/cf-delete-worker.git
 cd cf-delete-worker
 go build -o cf-delete-worker
 sudo mv cf-delete-worker /usr/local/bin/
@@ -25,7 +25,7 @@ sudo mv cf-delete-worker /usr/local/bin/
 ### Using Go Install
 
 ```bash
-go install github.com/cloudflare/cf-delete-worker@latest
+go install github.com/mattietk/cf-delete-worker@latest
 ```
 
 ## Prerequisites
@@ -160,7 +160,7 @@ API credentials are stored in:
 ### Building from Source
 
 ```bash
-git clone https://github.com/cloudflare/cf-delete-worker.git
+git clone https://github.com/mattietk/cf-delete-worker.git
 cd cf-delete-worker
 go mod download
 go build -o cf-delete-worker
@@ -220,8 +220,7 @@ MIT License - see LICENSE file for details
 
 ## Support
 
-- GitHub Issues: https://github.com/cloudflare/cf-delete-worker/issues
-- Cloudflare Community: https://community.cloudflare.com/
+- GitHub Issues: https://github.com/mattietk/cf-delete-worker/issues
 
 ---
 
