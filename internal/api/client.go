@@ -2,7 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 
 	"github.com/cloudflare/cf-delete-worker/pkg/types"
 	"github.com/cloudflare/cloudflare-go"
@@ -11,6 +14,7 @@ import (
 // Client wraps the Cloudflare API client
 type Client struct {
 	cf        *cloudflare.API
+	apiToken  string
 	accountID string
 	ctx       context.Context
 }
@@ -24,6 +28,7 @@ func NewClient(apiToken, accountID string) (*Client, error) {
 
 	return &Client{
 		cf:        cf,
+		apiToken:  apiToken,
 		accountID: accountID,
 		ctx:       context.Background(),
 	}, nil
@@ -98,10 +103,11 @@ func (c *Client) GetWorker(name string) (*types.WorkerInfo, error) {
 		return nil, fmt.Errorf("worker not found: %s", name)
 	}
 
-	// Try to get bindings (may fail, that's ok for MVP)
+	// Get bindings from the settings endpoint
 	bindings, err := c.GetWorkerBindings(name)
 	if err != nil {
-		// For MVP, we'll just have empty bindings if we can't fetch them
+		// If we can't get bindings, continue with empty list
+		// This allows the tool to still work for basic worker deletion
 		foundWorker.Bindings = []types.Binding{}
 	} else {
 		foundWorker.Bindings = bindings
@@ -110,13 +116,124 @@ func (c *Client) GetWorker(name string) (*types.WorkerInfo, error) {
 	return foundWorker, nil
 }
 
-// GetWorkerBindings retrieves bindings for a worker
-// Note: This is currently not implemented as it requires undocumented API endpoints
-// For MVP, we'll focus on worker deletion only
+// GetWorkerBindings retrieves bindings for a worker using the settings endpoint
+// This endpoint returns all binding information for a worker script
+// See: https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/script_and_version_settings/methods/get/
 func (c *Client) GetWorkerBindings(scriptName string) ([]types.Binding, error) {
-	// TODO: Implement binding retrieval when proper API is available
-	// For now, return empty list so the tool can still work for basic worker deletion
-	return []types.Binding{}, nil
+	// Use the settings endpoint to get all bindings
+	// GET /accounts/:account_id/workers/scripts/:script_name/settings
+	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/workers/scripts/%s/settings",
+		c.accountID, scriptName)
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(c.ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add authentication header
+	req.Header.Set("Authorization", "Bearer "+c.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	// Make the request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get worker settings: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Parse JSON response
+	var response struct {
+		Result struct {
+			Bindings []map[string]interface{} `json:"bindings"`
+		} `json:"result"`
+		Success bool              `json:"success"`
+		Errors  []json.RawMessage `json:"errors"`
+	}
+
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if !response.Success {
+		return nil, fmt.Errorf("API request failed: %v", response.Errors)
+	}
+
+	// Parse bindings from the response
+	var bindings []types.Binding
+	for _, b := range response.Result.Bindings {
+		binding := c.parseBinding(b)
+		if binding != nil {
+			bindings = append(bindings, *binding)
+		}
+	}
+
+	return bindings, nil
+}
+
+// parseBinding converts a raw binding map to a typed Binding struct
+func (c *Client) parseBinding(raw map[string]interface{}) *types.Binding {
+	bindingType, ok := raw["type"].(string)
+	if !ok {
+		return nil
+	}
+
+	name, _ := raw["name"].(string)
+	binding := &types.Binding{
+		Name: name,
+		Type: types.BindingType(bindingType),
+	}
+
+	// Parse type-specific fields
+	switch bindingType {
+	case "kv_namespace":
+		if namespaceID, ok := raw["namespace_id"].(string); ok {
+			binding.NamespaceID = namespaceID
+		}
+
+	case "r2_bucket":
+		if bucketName, ok := raw["bucket_name"].(string); ok {
+			binding.BucketName = bucketName
+		}
+
+	case "d1":
+		if id, ok := raw["id"].(string); ok {
+			binding.DatabaseID = id
+		}
+
+	case "durable_object_namespace":
+		if className, ok := raw["class_name"].(string); ok {
+			binding.ClassName = className
+		}
+		if scriptName, ok := raw["script_name"].(string); ok {
+			binding.ScriptName = scriptName
+		}
+
+	case "service":
+		if service, ok := raw["service"].(string); ok {
+			binding.ScriptName = service
+		}
+
+	case "queue":
+		if queueName, ok := raw["queue_name"].(string); ok {
+			binding.QueueName = queueName
+		}
+
+	case "plain_text":
+		binding.Type = types.BindingTypeEnvVar
+
+	case "secret_text":
+		binding.Type = types.BindingTypeSecret
+	}
+
+	return binding
 }
 
 // DeleteWorker deletes a worker script
