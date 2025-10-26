@@ -54,17 +54,17 @@ func init() {
 func run(cmd *cobra.Command, args []string) error {
 	workerName := args[0]
 
-	// Get API key
+	// Get API credentials
 	authMgr := auth.NewManager()
-	apiKey, err := authMgr.GetAPIKey()
+	creds, err := authMgr.GetCredentials()
 	if err != nil {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
-	config.APIKey = apiKey
+	config.APIKey = creds.Token
 
-	// Create API client
-	client, err := api.NewClient(apiKey, config.AccountID)
+	// Create API client with appropriate authentication method
+	client, err := api.NewClientWithEmail(creds.Token, creds.Email, config.AccountID)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}

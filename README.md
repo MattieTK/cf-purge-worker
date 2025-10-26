@@ -31,7 +31,13 @@ go install github.com/cloudflare/cf-delete-worker@latest
 
 ## Prerequisites
 
-You'll need a Cloudflare API Token with the following permissions:
+### Authentication
+
+This tool supports two authentication methods:
+
+#### API Token (Recommended)
+
+Create an API token with the following permissions:
 
 - **Workers Scripts**: Edit
 - **Workers KV Storage**: Edit
@@ -40,6 +46,12 @@ You'll need a Cloudflare API Token with the following permissions:
 - **Account Settings**: Read
 
 Create a token at: https://dash.cloudflare.com/profile/api-tokens
+
+#### Global API Key (Legacy)
+
+Alternatively, you can use your Global API Key along with your email address. Find your Global API Key at: https://dash.cloudflare.com/profile/api-tokens
+
+**Note**: API Tokens are recommended as they provide more granular permissions and better security.
 
 ## Quick Start
 
@@ -114,7 +126,7 @@ cf-delete-worker --update-key
 
 ## How It Works
 
-1. **Authentication**: On first run, you'll be prompted for your Cloudflare API token. It's stored securely in `~/.config/cf-delete-worker/credentials`.
+1. **Authentication**: On first run, you'll be prompted to choose between API Token or Global API Key authentication. Your credentials are stored securely in `~/.config/cf-delete-worker/`.
 
 2. **Worker Discovery**: The tool fetches details about the specified worker, including all its bindings (KV namespaces, R2 buckets, D1 databases, etc.).
 
@@ -144,13 +156,22 @@ cf-delete-worker --update-key
 
 ### Environment Variables
 
+**For API Token authentication:**
 - `CLOUDFLARE_API_TOKEN`: API token (for CI/CD, overrides stored token)
 
-### Config File
+**For Global API Key authentication:**
+- `CLOUDFLARE_API_KEY`: Your Global API Key
+- `CLOUDFLARE_EMAIL`: Your Cloudflare account email
+
+### Config Files
 
 API credentials are stored in:
-- Linux/macOS: `~/.config/cf-delete-worker/credentials`
-- Windows: `%APPDATA%\cf-delete-worker\credentials`
+- Linux/macOS: `~/.config/cf-delete-worker/`
+- Windows: `%APPDATA%\cf-delete-worker\`
+
+Files:
+- `credentials`: API token or Global API Key
+- `email`: Email address (only when using Global API Key)
 
 ## Safety Features
 

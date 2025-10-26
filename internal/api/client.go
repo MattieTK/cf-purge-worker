@@ -15,20 +15,41 @@ import (
 type Client struct {
 	cf        *cloudflare.API
 	apiToken  string
+	apiEmail  string // Email for Global API Key authentication
 	accountID string
 	ctx       context.Context
 }
 
-// NewClient creates a new Cloudflare API client
+// NewClient creates a new Cloudflare API client with API Token
 func NewClient(apiToken, accountID string) (*Client, error) {
-	cf, err := cloudflare.NewWithAPIToken(apiToken)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Cloudflare client: %w", err)
+	return NewClientWithEmail(apiToken, "", accountID)
+}
+
+// NewClientWithEmail creates a new Cloudflare API client
+// If email is empty, uses API Token authentication
+// If email is provided, uses Global API Key authentication
+func NewClientWithEmail(apiToken, email, accountID string) (*Client, error) {
+	var cf *cloudflare.API
+	var err error
+
+	if email != "" {
+		// Use Global API Key authentication
+		cf, err = cloudflare.New(apiToken, email)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Cloudflare client with API key: %w", err)
+		}
+	} else {
+		// Use API Token authentication
+		cf, err = cloudflare.NewWithAPIToken(apiToken)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Cloudflare client with token: %w", err)
+		}
 	}
 
 	return &Client{
 		cf:        cf,
 		apiToken:  apiToken,
+		apiEmail:  email,
 		accountID: accountID,
 		ctx:       context.Background(),
 	}, nil
@@ -131,8 +152,15 @@ func (c *Client) GetWorkerBindings(scriptName string) ([]types.Binding, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Add authentication header
-	req.Header.Set("Authorization", "Bearer "+c.apiToken)
+	// Add authentication headers based on auth method
+	if c.apiEmail != "" {
+		// Global API Key authentication
+		req.Header.Set("X-Auth-Key", c.apiToken)
+		req.Header.Set("X-Auth-Email", c.apiEmail)
+	} else {
+		// API Token authentication
+		req.Header.Set("Authorization", "Bearer "+c.apiToken)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	// Make the request
