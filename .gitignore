@@ -1,5 +1,6 @@
 # Binaries
 cf-delete-worker
+cf-purge-worker
 *.exe
 *.dll
 *.so
