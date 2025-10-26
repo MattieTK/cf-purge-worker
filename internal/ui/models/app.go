@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/cloudflare/cf-delete-worker/internal/deleter"
 	"github.com/cloudflare/cf-delete-worker/internal/ui/views"
 	"github.com/cloudflare/cf-delete-worker/pkg/types"
 )
@@ -27,18 +28,19 @@ type Model struct {
 	state            sessionState
 	worker           *types.WorkerInfo
 	plan             *types.DeletionPlan
-	result           *types.DeletionResult
-	err              error
+	Result           *types.DeletionResult
+	Err              error
 	spinner          spinner.Model
 	message          string
 	config           *types.Config
+	deleter          *deleter.Deleter
 	confirmDeletion  bool
 	confirmShared    bool
 	skipShared       bool
 }
 
 // NewModel creates a new application model
-func NewModel(worker *types.WorkerInfo, plan *types.DeletionPlan, config *types.Config) Model {
+func NewModel(worker *types.WorkerInfo, plan *types.DeletionPlan, config *types.Config, d *deleter.Deleter) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 
@@ -47,6 +49,7 @@ func NewModel(worker *types.WorkerInfo, plan *types.DeletionPlan, config *types.
 		worker:  worker,
 		plan:    plan,
 		config:  config,
+		deleter: d,
 		spinner: s,
 	}
 }
@@ -63,18 +66,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKeyPress(msg)
 
 	case spinner.TickMsg:
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
+		// Keep spinner running while in deleting state
+		if m.state == stateDeleting {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, cmd
+		}
 
 	case deletionCompleteMsg:
 		m.state = stateComplete
-		m.result = msg.result
+		m.Result = msg.result
 		return m, tea.Quit
 
 	case deletionErrorMsg:
 		m.state = stateError
-		m.err = msg.err
+		m.Err = msg.err
 		return m, tea.Quit
 	}
 
@@ -82,6 +88,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Don't handle keys while deleting
+	if m.state == stateDeleting {
+		return m, nil
+	}
+
 	switch m.state {
 	case stateShowPlan:
 		return m.handlePlanKeyPress(msg)
@@ -155,16 +166,17 @@ func (m Model) handleConfirmSharedKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 
 func (m Model) startDeletion() (tea.Model, tea.Cmd) {
 	m.state = stateDeleting
-	return m, func() tea.Msg {
-		// This would normally call the deleter
-		// For now, return a mock result
-		return deletionCompleteMsg{
-			result: &types.DeletionResult{
-				Success:       true,
-				WorkerDeleted: true,
-			},
-		}
-	}
+	return m, tea.Batch(
+		m.spinner.Tick,
+		func() tea.Msg {
+			// Execute deletion in background
+			result, err := m.deleter.Execute(m.plan)
+			if err != nil {
+				return deletionErrorMsg{err: err}
+			}
+			return deletionCompleteMsg{result: result}
+		},
+	)
 }
 
 // View renders the UI
@@ -198,11 +210,11 @@ func (m Model) View() string {
 		b.WriteString(fmt.Sprintf("%s Deleting resources...\n", m.spinner.View()))
 
 	case stateComplete:
-		b.WriteString(views.RenderDeletionResult(m.result))
+		b.WriteString(views.RenderDeletionResult(m.Result))
 		b.WriteString("\n")
 
 	case stateError:
-		b.WriteString(views.RenderError(fmt.Sprintf("Error: %v", m.err)))
+		b.WriteString(views.RenderError(fmt.Sprintf("Error: %v", m.Err)))
 		b.WriteString("\n")
 	}
 

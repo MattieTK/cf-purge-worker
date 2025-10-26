@@ -122,29 +122,37 @@ func run(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Create deleter (will be used by either UI or direct execution)
+	d := deleter.NewDeleter(client, config.DryRun)
+
 	// Interactive mode - use Bubble Tea
 	if !config.Force && !config.AutoYes {
-		p := tea.NewProgram(models.NewModel(worker, plan, &config))
+		p := tea.NewProgram(models.NewModel(worker, plan, &config, d))
 		finalModel, err := p.Run()
 		if err != nil {
 			return fmt.Errorf("UI error: %w", err)
 		}
 
-		// Check if user confirmed
+		// Check the final state
 		m := finalModel.(models.Model)
-		if m.View() == "" {
-			// User cancelled
-			fmt.Println(views.RenderWarning("Cancelled"))
-			return nil
+
+		// If there's an error, return it
+		if m.Err != nil {
+			return fmt.Errorf("deletion failed: %w", m.Err)
 		}
+
+		// If result exists but not successful, exit with error
+		if m.Result != nil && !m.Result.Success {
+			os.Exit(1)
+		}
+
+		return nil
 	}
 
-	// Execute deletion
+	// Non-interactive mode - execute deletion directly
 	if !config.Quiet {
 		fmt.Println(views.RenderProgress("Deleting resources"))
 	}
-
-	d := deleter.NewDeleter(client, config.DryRun)
 
 	// Set deletion flags based on config
 	if config.ExclusiveOnly {
