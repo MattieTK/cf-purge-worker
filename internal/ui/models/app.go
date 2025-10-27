@@ -18,6 +18,7 @@ type sessionState int
 
 const (
 	stateLoading sessionState = iota
+	stateConfirmDependencyCheck
 	stateAnalyzing
 	stateShowPlan
 	stateConfirmDeletion
@@ -51,19 +52,20 @@ func (p *progressTracker) get() (int, int, string) {
 
 // Model represents the application state
 type Model struct {
-	state            sessionState
-	worker           *types.WorkerInfo
-	plan             *types.DeletionPlan
-	Result           *types.DeletionResult
-	Err              error
-	spinner          spinner.Model
-	message          string
-	config           *types.Config
-	deleter          *deleter.Deleter
-	analyzer         *analyzer.Analyzer
-	confirmDeletion  bool
-	confirmShared    bool
-	skipShared       bool
+	state               sessionState
+	worker              *types.WorkerInfo
+	plan                *types.DeletionPlan
+	Result              *types.DeletionResult
+	Err                 error
+	spinner             spinner.Model
+	message             string
+	config              *types.Config
+	deleter             *deleter.Deleter
+	analyzer            *analyzer.Analyzer
+	confirmDeletion     bool
+	confirmShared       bool
+	skipShared          bool
+	skipDependencyCheck bool
 	// Analysis progress tracking
 	analysisProgress int
 	analysisTotal    int
@@ -91,14 +93,21 @@ func NewModelWithAnalysis(worker *types.WorkerInfo, a *analyzer.Analyzer, config
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 
+	// Start with dependency check prompt unless flag is set
+	initialState := stateConfirmDependencyCheck
+	if config.SkipDependencyCheck {
+		initialState = stateAnalyzing
+	}
+
 	return Model{
-		state:           stateAnalyzing,
-		worker:          worker,
-		config:          config,
-		deleter:         d,
-		analyzer:        a,
-		spinner:         s,
-		progressTracker: &progressTracker{},
+		state:               initialState,
+		worker:              worker,
+		config:              config,
+		deleter:             d,
+		analyzer:            a,
+		spinner:             s,
+		skipDependencyCheck: config.SkipDependencyCheck,
+		progressTracker:     &progressTracker{},
 	}
 }
 
@@ -124,11 +133,19 @@ func (m Model) pollProgress() tea.Cmd {
 // runAnalysis runs the dependency analysis in the background
 func (m Model) runAnalysis() tea.Cmd {
 	return func() tea.Msg {
-		// Run analysis with progress callback that updates the tracker
-		resources, err := m.analyzer.AnalyzeDependencies(m.worker, func(current, total int, workerName string) {
-			// Update the progress tracker which will be polled by the UI
-			m.progressTracker.update(current, total, workerName)
-		})
+		var resources []types.ResourceUsage
+		var err error
+
+		if m.skipDependencyCheck {
+			// Fast path: just get target worker's resources without checking dependencies
+			resources, err = m.analyzer.GetTargetWorkerResources(m.worker)
+		} else {
+			// Full analysis: check all workers for shared resources
+			resources, err = m.analyzer.AnalyzeDependencies(m.worker, func(current, total int, workerName string) {
+				// Update the progress tracker which will be polled by the UI
+				m.progressTracker.update(current, total, workerName)
+			})
+		}
 
 		if err != nil {
 			return analysisErrorMsg{err: err}
@@ -190,12 +207,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Don't handle keys while deleting
-	if m.state == stateDeleting {
+	// Don't handle keys while deleting or analyzing
+	if m.state == stateDeleting || m.state == stateAnalyzing {
 		return m, nil
 	}
 
 	switch m.state {
+	case stateConfirmDependencyCheck:
+		return m.handleConfirmDependencyCheckKeyPress(msg)
 	case stateShowPlan:
 		return m.handlePlanKeyPress(msg)
 	case stateConfirmDeletion:
@@ -208,6 +227,35 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
+	}
+
+	return m, nil
+}
+
+func (m Model) handleConfirmDependencyCheckKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q", "esc":
+		return m, tea.Quit
+
+	case "n", "N":
+		// Skip dependency check
+		m.skipDependencyCheck = true
+		m.state = stateAnalyzing
+		return m, tea.Batch(
+			m.spinner.Tick,
+			m.runAnalysis(),
+			m.pollProgress(),
+		)
+
+	case "y", "Y", "enter":
+		// Run full dependency analysis
+		m.skipDependencyCheck = false
+		m.state = stateAnalyzing
+		return m, tea.Batch(
+			m.spinner.Tick,
+			m.runAnalysis(),
+			m.pollProgress(),
+		)
 	}
 
 	return m, nil
@@ -290,6 +338,13 @@ func (m Model) View() string {
 	switch m.state {
 	case stateLoading:
 		b.WriteString(fmt.Sprintf("%s %s\n", m.spinner.View(), m.message))
+
+	case stateConfirmDependencyCheck:
+		b.WriteString(views.RenderWarning("Dependency analysis can take a long time on accounts with many workers."))
+		b.WriteString("\n\n")
+		b.WriteString("This checks if other workers share the same resources to prevent accidental deletion.\n")
+		b.WriteString("If you're certain no other workers use these resources, you can skip this step.\n\n")
+		b.WriteString("Run dependency analysis? [Y/n]: ")
 
 	case stateAnalyzing:
 		b.WriteString(fmt.Sprintf("%s Analyzing dependencies...\n", m.spinner.View()))
