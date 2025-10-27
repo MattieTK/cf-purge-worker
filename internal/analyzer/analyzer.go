@@ -22,6 +22,34 @@ func NewAnalyzer(client *api.Client) *Analyzer {
 	}
 }
 
+// GetTargetWorkerResources returns the resources for the target worker without dependency analysis
+// This is much faster as it doesn't check other workers, but marks all resources as safe (exclusive)
+func (a *Analyzer) GetTargetWorkerResources(targetWorker *types.WorkerInfo) ([]types.ResourceUsage, error) {
+	var result []types.ResourceUsage
+
+	for _, binding := range targetWorker.Bindings {
+		resourceKey := a.getResourceKey(binding)
+		if resourceKey == "" {
+			continue
+		}
+
+		usage := &types.ResourceUsage{
+			ResourceID:   a.getResourceID(binding),
+			ResourceType: binding.Type,
+			ResourceName: a.getResourceName(binding),
+			UsedBy:       []string{targetWorker.Name},
+			RiskLevel:    types.RiskLevelSafe, // Assume safe since we're not checking
+		}
+
+		// Enrich with names if needed
+		usage.ResourceName = a.enrichResourceName(binding, usage.ResourceName)
+
+		result = append(result, *usage)
+	}
+
+	return result, nil
+}
+
 // AnalyzeDependencies analyzes which workers depend on which resources
 func (a *Analyzer) AnalyzeDependencies(targetWorker *types.WorkerInfo, progressCallback ...ProgressCallback) ([]types.ResourceUsage, error) {
 	// Get callback if provided

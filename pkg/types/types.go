@@ -81,13 +81,14 @@ type DeletionResult struct {
 
 // Config holds the application configuration
 type Config struct {
-	APIKey     string
-	AccountID  string
-	DryRun     bool
-	Force      bool
-	ExclusiveOnly bool
-	AutoYes    bool
-	Verbose    bool
-	Quiet      bool
-	JSONOutput bool
+	APIKey              string
+	AccountID           string
+	DryRun              bool
+	Force               bool
+	ExclusiveOnly       bool
+	AutoYes             bool
+	Verbose             bool
+	Quiet               bool
+	JSONOutput          bool
+	SkipDependencyCheck bool
 }

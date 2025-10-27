@@ -38,6 +38,7 @@ func init() {
 	rootCmd.Flags().BoolVarP(&config.Verbose, "verbose", "v", false, "Verbose logging")
 	rootCmd.Flags().BoolVarP(&config.Quiet, "quiet", "q", false, "Minimal output")
 	rootCmd.Flags().BoolVar(&config.JSONOutput, "json", false, "Output results in JSON format")
+	rootCmd.Flags().BoolVar(&config.SkipDependencyCheck, "skip-dependency-check", false, "Skip checking if other workers use the same resources")
 
 	// Hidden flag for updating API key
 	var updateKey bool
@@ -122,36 +123,73 @@ func run(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Non-interactive mode - run analysis with progress indicators
-	if !config.Quiet {
-		fmt.Println(views.RenderProgress("Analyzing dependencies"))
-	}
-
+	// Non-interactive mode - check if we should prompt for dependency analysis
 	var resources []types.ResourceUsage
+	skipDependencyCheck := config.SkipDependencyCheck
 
-	if !config.Quiet && !config.JSONOutput {
-		// Show progress during analysis
-		resources, err = a.AnalyzeDependencies(worker, func(current, total int, workerName string) {
-			// Use ANSI escape code to clear the line instead of hardcoded padding
-			fmt.Printf("\r\033[K%s Analyzing workers: %d/%d (%s)",
-				views.RenderProgress(""),
-				current, total, workerName)
-			if current == total {
-				fmt.Println() // New line when done
-			}
-		})
-	} else {
-		// No progress callback for quiet/JSON mode
-		resources, err = a.AnalyzeDependencies(worker)
-	}
-
-	if err != nil {
-		return fmt.Errorf("failed to analyze dependencies: %w", err)
-	}
-
-	if !config.Quiet {
-		fmt.Println(views.RenderSuccess(fmt.Sprintf("Found %d resource(s)", len(resources))))
+	// Prompt for dependency check if not already decided and not in auto/quiet/json mode
+	if !skipDependencyCheck && !config.AutoYes && !config.Force && !config.Quiet && !config.JSONOutput {
+		fmt.Println(views.RenderWarning("Dependency analysis can take a long time on accounts with many workers."))
 		fmt.Println()
+		fmt.Println("This checks if other workers share the same resources to prevent accidental deletion.")
+		fmt.Println("If you're certain no other workers use these resources, you can skip this step.")
+		fmt.Println()
+		fmt.Print("Run dependency analysis? [Y/n]: ")
+
+		var response string
+		fmt.Scanln(&response)
+
+		if response == "n" || response == "N" {
+			skipDependencyCheck = true
+		}
+	}
+
+	if skipDependencyCheck {
+		// Fast path: just get target worker's resources without checking dependencies
+		if !config.Quiet {
+			fmt.Println(views.RenderProgress("Getting worker resources"))
+		}
+
+		resources, err = a.GetTargetWorkerResources(worker)
+
+		if err != nil {
+			return fmt.Errorf("failed to get worker resources: %w", err)
+		}
+
+		if !config.Quiet {
+			fmt.Println(views.RenderSuccess(fmt.Sprintf("Found %d resource(s)", len(resources))))
+			fmt.Println()
+		}
+	} else {
+		// Full analysis: check all workers for shared resources
+		if !config.Quiet {
+			fmt.Println(views.RenderProgress("Analyzing dependencies"))
+		}
+
+		if !config.Quiet && !config.JSONOutput {
+			// Show progress during analysis
+			resources, err = a.AnalyzeDependencies(worker, func(current, total int, workerName string) {
+				// Use ANSI escape code to clear the line instead of hardcoded padding
+				fmt.Printf("\r\033[K%s Analyzing workers: %d/%d (%s)",
+					views.RenderProgress(""),
+					current, total, workerName)
+				if current == total {
+					fmt.Println() // New line when done
+				}
+			})
+		} else {
+			// No progress callback for quiet/JSON mode
+			resources, err = a.AnalyzeDependencies(worker)
+		}
+
+		if err != nil {
+			return fmt.Errorf("failed to analyze dependencies: %w", err)
+		}
+
+		if !config.Quiet {
+			fmt.Println(views.RenderSuccess(fmt.Sprintf("Found %d resource(s)", len(resources))))
+			fmt.Println()
+		}
 	}
 
 	// Create deletion plan
