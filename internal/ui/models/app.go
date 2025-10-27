@@ -8,10 +8,10 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/cloudflare/cf-purge-worker/internal/analyzer"
-	"github.com/cloudflare/cf-purge-worker/internal/deleter"
-	"github.com/cloudflare/cf-purge-worker/internal/ui/views"
-	"github.com/cloudflare/cf-purge-worker/pkg/types"
+	"github.com/mattietk/cf-purge-worker/internal/analyzer"
+	"github.com/mattietk/cf-purge-worker/internal/deleter"
+	"github.com/mattietk/cf-purge-worker/internal/ui/views"
+	"github.com/mattietk/cf-purge-worker/pkg/types"
 )
 
 type sessionState int

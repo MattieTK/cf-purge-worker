@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cloudflare/cf-purge-worker/internal/ui/styles"
-	"github.com/cloudflare/cf-purge-worker/pkg/types"
+	"github.com/mattietk/cf-purge-worker/internal/ui/styles"
+	"github.com/mattietk/cf-purge-worker/pkg/types"
 )
 
 // RenderHeader renders the application header

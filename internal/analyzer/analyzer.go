@@ -3,8 +3,8 @@ package analyzer
 import (
 	"fmt"
 
-	"github.com/cloudflare/cf-purge-worker/internal/api"
-	"github.com/cloudflare/cf-purge-worker/pkg/types"
+	"github.com/mattietk/cf-purge-worker/internal/api"
+	"github.com/mattietk/cf-purge-worker/pkg/types"
 )
 
 // ProgressCallback is called during analysis to report progress

@@ -7,8 +7,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/cloudflare/cf-purge-worker/pkg/types"
 	"github.com/cloudflare/cloudflare-go"
+	"github.com/mattietk/cf-purge-worker/pkg/types"
 )
 
 // Client wraps the Cloudflare API client
