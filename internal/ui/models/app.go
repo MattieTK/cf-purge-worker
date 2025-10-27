@@ -3,9 +3,12 @@ package models
 import (
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/cloudflare/cf-delete-worker/internal/analyzer"
 	"github.com/cloudflare/cf-delete-worker/internal/deleter"
 	"github.com/cloudflare/cf-delete-worker/internal/ui/views"
 	"github.com/cloudflare/cf-delete-worker/pkg/types"
@@ -15,6 +18,7 @@ type sessionState int
 
 const (
 	stateLoading sessionState = iota
+	stateAnalyzing
 	stateShowPlan
 	stateConfirmDeletion
 	stateConfirmShared
@@ -22,6 +26,28 @@ const (
 	stateComplete
 	stateError
 )
+
+// progressTracker safely tracks analysis progress across goroutines
+type progressTracker struct {
+	mu         sync.RWMutex
+	current    int
+	total      int
+	workerName string
+}
+
+func (p *progressTracker) update(current, total int, workerName string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.current = current
+	p.total = total
+	p.workerName = workerName
+}
+
+func (p *progressTracker) get() (int, int, string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.current, p.total, p.workerName
+}
 
 // Model represents the application state
 type Model struct {
@@ -34,12 +60,18 @@ type Model struct {
 	message          string
 	config           *types.Config
 	deleter          *deleter.Deleter
+	analyzer         *analyzer.Analyzer
 	confirmDeletion  bool
 	confirmShared    bool
 	skipShared       bool
+	// Analysis progress tracking
+	analysisProgress int
+	analysisTotal    int
+	analysisWorker   string
+	progressTracker  *progressTracker
 }
 
-// NewModel creates a new application model
+// NewModel creates a new application model with a pre-computed plan
 func NewModel(worker *types.WorkerInfo, plan *types.DeletionPlan, config *types.Config, d *deleter.Deleter) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -54,9 +86,58 @@ func NewModel(worker *types.WorkerInfo, plan *types.DeletionPlan, config *types.
 	}
 }
 
+// NewModelWithAnalysis creates a new model that will run analysis interactively
+func NewModelWithAnalysis(worker *types.WorkerInfo, a *analyzer.Analyzer, config *types.Config, d *deleter.Deleter) Model {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+
+	return Model{
+		state:           stateAnalyzing,
+		worker:          worker,
+		config:          config,
+		deleter:         d,
+		analyzer:        a,
+		spinner:         s,
+		progressTracker: &progressTracker{},
+	}
+}
+
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
+	if m.state == stateAnalyzing {
+		return tea.Batch(
+			m.spinner.Tick,
+			m.runAnalysis(),
+			m.pollProgress(),
+		)
+	}
 	return m.spinner.Tick
+}
+
+// pollProgress creates a command that polls for progress updates
+func (m Model) pollProgress() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return progressPollMsg{}
+	})
+}
+
+// runAnalysis runs the dependency analysis in the background
+func (m Model) runAnalysis() tea.Cmd {
+	return func() tea.Msg {
+		// Run analysis with progress callback that updates the tracker
+		resources, err := m.analyzer.AnalyzeDependencies(m.worker, func(current, total int, workerName string) {
+			// Update the progress tracker which will be polled by the UI
+			m.progressTracker.update(current, total, workerName)
+		})
+
+		if err != nil {
+			return analysisErrorMsg{err: err}
+		}
+
+		// Create deletion plan
+		plan := m.analyzer.CreateDeletionPlan(m.worker, resources, m.config.ExclusiveOnly)
+		return analysisCompleteMsg{plan: plan}
+	}
 }
 
 // Update handles messages
@@ -66,12 +147,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKeyPress(msg)
 
 	case spinner.TickMsg:
-		// Keep spinner running while in deleting state
-		if m.state == stateDeleting {
+		// Keep spinner running while in analyzing or deleting state
+		if m.state == stateAnalyzing || m.state == stateDeleting {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
 		}
+
+	case progressPollMsg:
+		// Poll the progress tracker and update our fields
+		if m.state == stateAnalyzing && m.progressTracker != nil {
+			current, total, workerName := m.progressTracker.get()
+			m.analysisProgress = current
+			m.analysisTotal = total
+			m.analysisWorker = workerName
+			// Schedule next poll
+			return m, m.pollProgress()
+		}
+
+	case analysisCompleteMsg:
+		m.plan = msg.plan
+		m.state = stateShowPlan
+		return m, nil
+
+	case analysisErrorMsg:
+		m.state = stateError
+		m.Err = msg.err
+		return m, tea.Quit
 
 	case deletionCompleteMsg:
 		m.state = stateComplete
@@ -189,6 +291,14 @@ func (m Model) View() string {
 	case stateLoading:
 		b.WriteString(fmt.Sprintf("%s %s\n", m.spinner.View(), m.message))
 
+	case stateAnalyzing:
+		b.WriteString(fmt.Sprintf("%s Analyzing dependencies...\n", m.spinner.View()))
+		if m.analysisTotal > 0 {
+			percentage := float64(m.analysisProgress) / float64(m.analysisTotal) * 100
+			b.WriteString(fmt.Sprintf("   Progress: %d/%d workers (%.0f%%) - Current: %s\n",
+				m.analysisProgress, m.analysisTotal, percentage, m.analysisWorker))
+		}
+
 	case stateShowPlan:
 		b.WriteString(views.RenderDeletionPlan(m.plan))
 		b.WriteString("\n")
@@ -229,3 +339,19 @@ type deletionCompleteMsg struct {
 type deletionErrorMsg struct {
 	err error
 }
+
+type analysisProgressMsg struct {
+	current    int
+	total      int
+	workerName string
+}
+
+type analysisCompleteMsg struct {
+	plan *types.DeletionPlan
+}
+
+type analysisErrorMsg struct {
+	err error
+}
+
+type progressPollMsg struct{}

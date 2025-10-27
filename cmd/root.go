@@ -92,42 +92,15 @@ func run(cmd *cobra.Command, args []string) error {
 
 	if !config.Quiet {
 		fmt.Println(views.RenderSuccess("Worker found"))
-		fmt.Println(views.RenderProgress("Analyzing dependencies"))
 	}
 
-	// Analyze dependencies
-	analyzer := analyzer.NewAnalyzer(client)
-	resources, err := analyzer.AnalyzeDependencies(worker)
-	if err != nil {
-		return fmt.Errorf("failed to analyze dependencies: %w", err)
-	}
-
-	if !config.Quiet {
-		fmt.Println(views.RenderSuccess(fmt.Sprintf("Found %d resource(s)", len(resources))))
-		fmt.Println()
-	}
-
-	// Create deletion plan
-	plan := analyzer.CreateDeletionPlan(worker, resources, config.ExclusiveOnly)
-
-	// If JSON output, print and exit
-	if config.JSONOutput {
-		return outputJSON(plan)
-	}
-
-	// In dry-run mode, just show the plan
-	if config.DryRun {
-		fmt.Println(views.RenderDeletionPlan(plan))
-		fmt.Println(views.RenderWarning("DRY RUN - No changes were made"))
-		return nil
-	}
-
-	// Create deleter (will be used by either UI or direct execution)
+	// Create analyzer and deleter
+	a := analyzer.NewAnalyzer(client)
 	d := deleter.NewDeleter(client, config.DryRun)
 
-	// Interactive mode - use Bubble Tea
-	if !config.Force && !config.AutoYes {
-		p := tea.NewProgram(models.NewModel(worker, plan, &config, d))
+	// Interactive mode - run analysis inside TUI
+	if !config.Force && !config.AutoYes && !config.DryRun && !config.JSONOutput {
+		p := tea.NewProgram(models.NewModelWithAnalysis(worker, a, &config, d))
 		finalModel, err := p.Run()
 		if err != nil {
 			return fmt.Errorf("UI error: %w", err)
@@ -149,7 +122,54 @@ func run(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Non-interactive mode - execute deletion directly
+	// Non-interactive mode - run analysis with progress indicators
+	if !config.Quiet {
+		fmt.Println(views.RenderProgress("Analyzing dependencies"))
+	}
+
+	var resources []types.ResourceUsage
+
+	if !config.Quiet && !config.JSONOutput {
+		// Show progress during analysis
+		resources, err = a.AnalyzeDependencies(worker, func(current, total int, workerName string) {
+			// Use ANSI escape code to clear the line instead of hardcoded padding
+			fmt.Printf("\r\033[K%s Analyzing workers: %d/%d (%s)",
+				views.RenderProgress(""),
+				current, total, workerName)
+			if current == total {
+				fmt.Println() // New line when done
+			}
+		})
+	} else {
+		// No progress callback for quiet/JSON mode
+		resources, err = a.AnalyzeDependencies(worker)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to analyze dependencies: %w", err)
+	}
+
+	if !config.Quiet {
+		fmt.Println(views.RenderSuccess(fmt.Sprintf("Found %d resource(s)", len(resources))))
+		fmt.Println()
+	}
+
+	// Create deletion plan
+	plan := a.CreateDeletionPlan(worker, resources, config.ExclusiveOnly)
+
+	// If JSON output, print and exit
+	if config.JSONOutput {
+		return outputJSON(plan)
+	}
+
+	// In dry-run mode, just show the plan
+	if config.DryRun {
+		fmt.Println(views.RenderDeletionPlan(plan))
+		fmt.Println(views.RenderWarning("DRY RUN - No changes were made"))
+		return nil
+	}
+
+	// Non-interactive deletion mode
 	if !config.Quiet {
 		fmt.Println(views.RenderProgress("Deleting resources"))
 	}
