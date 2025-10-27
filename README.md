@@ -1,4 +1,4 @@
-# ☁️ cf-delete-worker
+# ☁️ cf-purge-worker
 
 A beautiful CLI tool for safely deleting Cloudflare Workers and their associated resources.
 
@@ -16,16 +16,16 @@ A beautiful CLI tool for safely deleting Cloudflare Workers and their associated
 ### From Source
 
 ```bash
-git clone https://github.com/mattietk/cf-delete-worker.git
-cd cf-delete-worker
-go build -o cf-delete-worker
-sudo mv cf-delete-worker /usr/local/bin/
+git clone https://github.com/mattietk/cf-purge-worker.git
+cd cf-purge-worker
+go build -o cf-purge-worker
+sudo mv cf-purge-worker /usr/local/bin/
 ```
 
 ### Using Go Install
 
 ```bash
-go install github.com/mattietk/cf-delete-worker@latest
+go install github.com/mattietk/cf-purge-worker@latest
 ```
 
 ## Prerequisites
@@ -43,77 +43,85 @@ Create a token at: https://dash.cloudflare.com/profile/api-tokens
 ## Quick Start
 
 1. **Delete a worker (interactive mode)**:
+
    ```bash
-   cf-delete-worker my-worker
+   cf-purge-worker my-worker
    ```
 
 2. **Preview deletion without making changes**:
+
    ```bash
-   cf-delete-worker --dry-run my-worker
+   cf-purge-worker --dry-run my-worker
    ```
 
 3. **Delete only exclusive resources (preserve shared ones)**:
    ```bash
-   cf-delete-worker --exclusive-only my-worker
+   cf-purge-worker --exclusive-only my-worker
    ```
 
 ## Usage
 
 ```bash
-cf-delete-worker [flags] <worker-name>
+cf-purge-worker [flags] <worker-name>
 ```
 
 ### Flags
 
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--account-id <id>` | | Specify Cloudflare account ID |
-| `--dry-run` | `-d` | Show deletion plan without executing |
-| `--force` | `-f` | Skip confirmation prompts (dangerous) |
-| `--exclusive-only` | | Only delete resources not shared with other workers |
-| `--yes` | `-y` | Answer yes to all prompts |
-| `--verbose` | `-v` | Verbose logging |
-| `--quiet` | `-q` | Minimal output |
-| `--json` | | Output results in JSON format |
-| `--update-key` | | Update stored API key |
-| `--help` | `-h` | Show help message |
-| `--version` | | Show version information |
+| Flag                | Short | Description                                         |
+| ------------------- | ----- | --------------------------------------------------- |
+| `--account-id <id>` |       | Specify Cloudflare account ID                       |
+| `--dry-run`         | `-d`  | Show deletion plan without executing                |
+| `--force`           | `-f`  | Skip confirmation prompts (dangerous)               |
+| `--exclusive-only`  |       | Only delete resources not shared with other workers |
+| `--yes`             | `-y`  | Answer yes to all prompts                           |
+| `--verbose`         | `-v`  | Verbose logging                                     |
+| `--quiet`           | `-q`  | Minimal output                                      |
+| `--json`            |       | Output results in JSON format                       |
+| `--update-key`      |       | Update stored API key                               |
+| `--help`            | `-h`  | Show help message                                   |
+| `--version`         |       | Show version information                            |
 
 ### Examples
 
 **Basic deletion with interactive confirmations**:
+
 ```bash
-cf-delete-worker my-api-worker
+cf-purge-worker my-api-worker
 ```
 
 **Dry run to see what would be deleted**:
+
 ```bash
-cf-delete-worker --dry-run my-api-worker
+cf-purge-worker --dry-run my-api-worker
 ```
 
 **Delete only exclusive resources, preserve shared ones**:
+
 ```bash
-cf-delete-worker --exclusive-only my-api-worker
+cf-purge-worker --exclusive-only my-api-worker
 ```
 
 **Force deletion without prompts (use with caution!)**:
+
 ```bash
-cf-delete-worker --force --yes my-api-worker
+cf-purge-worker --force --yes my-api-worker
 ```
 
 **Use with specific account**:
+
 ```bash
-cf-delete-worker --account-id abc123def456 my-worker
+cf-purge-worker --account-id abc123def456 my-worker
 ```
 
 **Update stored API token**:
+
 ```bash
-cf-delete-worker --update-key
+cf-purge-worker --update-key
 ```
 
 ## How It Works
 
-1. **Authentication**: On first run, you'll be prompted for your Cloudflare API token. It's stored securely in `~/.config/cf-delete-worker/credentials`.
+1. **Authentication**: On first run, you'll be prompted for your Cloudflare API token. It's stored securely in `~/.config/cf-purge-worker/credentials`.
 
 2. **Worker Discovery**: The tool fetches details about the specified worker, including all its bindings (KV namespaces, R2 buckets, D1 databases, etc.).
 
@@ -143,8 +151,9 @@ cf-delete-worker --update-key
 ### Config File
 
 API credentials are stored in:
-- Linux/macOS: `~/.config/cf-delete-worker/credentials`
-- Windows: `%APPDATA%\cf-delete-worker\credentials`
+
+- Linux/macOS: `~/.config/cf-purge-worker/credentials`
+- Windows: `%APPDATA%\cf-purge-worker\credentials`
 
 ## Safety Features
 
@@ -160,10 +169,10 @@ API credentials are stored in:
 ### Building from Source
 
 ```bash
-git clone https://github.com/mattietk/cf-delete-worker.git
-cd cf-delete-worker
+git clone https://github.com/mattietk/cf-purge-worker.git
+cd cf-purge-worker
 go mod download
-go build -o cf-delete-worker
+go build -o cf-purge-worker
 ```
 
 ### Running Tests
@@ -175,7 +184,7 @@ go test ./...
 ### Project Structure
 
 ```
-cf-delete-worker/
+cf-purge-worker/
 ├── cmd/              # CLI commands
 ├── internal/
 │   ├── api/          # Cloudflare API client
@@ -194,15 +203,19 @@ cf-delete-worker/
 ## Troubleshooting
 
 ### "No accounts found"
+
 Make sure your API token has the correct permissions and is associated with a Cloudflare account.
 
 ### "Multiple accounts found"
+
 Specify the account ID with `--account-id <id>`.
 
 ### "Failed to delete worker"
+
 Check that the worker exists and your API token has Workers Scripts: Edit permission.
 
 ### "Permission denied" errors
+
 Your API token may not have sufficient permissions. Create a new token with the required scopes.
 
 ## Contributing
@@ -220,7 +233,7 @@ MIT License - see LICENSE file for details
 
 ## Support
 
-- GitHub Issues: https://github.com/mattietk/cf-delete-worker/issues
+- GitHub Issues: https://github.com/mattietk/cf-purge-worker/issues
 
 ---
 

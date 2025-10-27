@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/cloudflare/cf-delete-worker/cmd"
+	"github.com/cloudflare/cf-purge-worker/cmd"
 )
 
 func main() {

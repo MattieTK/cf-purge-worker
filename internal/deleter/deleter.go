@@ -3,8 +3,8 @@ package deleter
 import (
 	"fmt"
 
-	"github.com/cloudflare/cf-delete-worker/internal/api"
-	"github.com/cloudflare/cf-delete-worker/pkg/types"
+	"github.com/cloudflare/cf-purge-worker/internal/api"
+	"github.com/cloudflare/cf-purge-worker/pkg/types"
 )
 
 // Deleter handles deletion operations

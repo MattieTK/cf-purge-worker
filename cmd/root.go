@@ -5,22 +5,22 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/cloudflare/cf-delete-worker/internal/analyzer"
-	"github.com/cloudflare/cf-delete-worker/internal/api"
-	"github.com/cloudflare/cf-delete-worker/internal/auth"
-	"github.com/cloudflare/cf-delete-worker/internal/deleter"
-	"github.com/cloudflare/cf-delete-worker/internal/ui/models"
-	"github.com/cloudflare/cf-delete-worker/internal/ui/views"
-	"github.com/cloudflare/cf-delete-worker/pkg/types"
+	"github.com/cloudflare/cf-purge-worker/internal/analyzer"
+	"github.com/cloudflare/cf-purge-worker/internal/api"
+	"github.com/cloudflare/cf-purge-worker/internal/auth"
+	"github.com/cloudflare/cf-purge-worker/internal/deleter"
+	"github.com/cloudflare/cf-purge-worker/internal/ui/models"
+	"github.com/cloudflare/cf-purge-worker/internal/ui/views"
+	"github.com/cloudflare/cf-purge-worker/pkg/types"
 	"github.com/spf13/cobra"
 )
 
 var (
 	config types.Config
 	rootCmd = &cobra.Command{
-		Use:   "cf-delete-worker [worker-name]",
+		Use:   "cf-purge-worker [worker-name]",
 		Short: "Safely delete Cloudflare Workers and their resources",
-		Long: `cf-delete-worker is a CLI tool for safely deleting Cloudflare Workers
+		Long: `cf-purge-worker is a CLI tool for safely deleting Cloudflare Workers
 and their associated resources (KV namespaces, R2 buckets, D1 databases, etc.)
 while preventing accidental deletion of shared resources.`,
 		Version: "0.1.0",

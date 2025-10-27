@@ -1,4 +1,4 @@
-module github.com/cloudflare/cf-delete-worker
+module github.com/cloudflare/cf-purge-worker
 
 go 1.24.7
 

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	configDir  = ".config/cf-delete-worker"
+	configDir  = ".config/cf-purge-worker"
 	credsFile  = "credentials"
 )
 

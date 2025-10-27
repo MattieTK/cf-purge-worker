@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/cloudflare/cf-delete-worker/pkg/types"
+	"github.com/cloudflare/cf-purge-worker/pkg/types"
 	"github.com/cloudflare/cloudflare-go"
 )
 

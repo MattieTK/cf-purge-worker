@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cloudflare/cf-delete-worker/internal/ui/styles"
-	"github.com/cloudflare/cf-delete-worker/pkg/types"
+	"github.com/cloudflare/cf-purge-worker/internal/ui/styles"
+	"github.com/cloudflare/cf-purge-worker/pkg/types"
 )
 
 // RenderHeader renders the application header
 func RenderHeader() string {
 	var b strings.Builder
-	b.WriteString(styles.Header.Render("☁️  cf-delete-worker"))
+	b.WriteString(styles.Header.Render("☁️  cf-purge-worker"))
 	b.WriteString("\n")
 	b.WriteString(styles.Subtitle.Render("Safely delete Cloudflare Workers and resources"))
 	b.WriteString("\n")
